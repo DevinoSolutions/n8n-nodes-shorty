@@ -1,0 +1,101 @@
+# Publishes this n8n community node package to npm on every version tag push.
+#
+# Starting May 1 2026, n8n requires all community nodes to be published via
+# GitHub Actions with npm provenance statements. This workflow satisfies that
+# requirement. Provenance lets anyone cryptographically verify that a package
+# was built by this exact workflow, from this exact repository and commit.
+#
+# ─── PREREQUISITES ─────────────────────────────────────────────────────────────
+#
+# @n8n/node-cli ≥ 0.23.0 is required. Earlier versions do not support the
+# provenance flag passed by `npm run release` in CI, and the publish step will
+# fail. Check the version installed in this project with:
+#
+#   npm list @n8n/node-cli
+#
+# To upgrade, add @n8n/node-cli@latest as a dev dependency using your package manager.
+#
+# ─── ONE-TIME SETUP (Devino) ───────────────────────────────────────────────────
+#
+# Repository: github.com/DevinoSolutions/n8n-nodes-shorty (private until the owner makes it public, MIT).
+#
+# First release (the package does not exist on npm yet, and npm cannot attach a
+# trusted publisher to a package that does not exist):
+#   1. Mint a short-lived granular npm token with publish rights.
+#   2. Add it as the NPM_TOKEN repository secret.
+#   3. Push the first version tag. This workflow publishes with provenance.
+#   4. Configure the trusted publisher below, then delete the NPM_TOKEN secret
+#      and revoke the token.
+#
+# Every later release — OIDC Trusted Publishing (no long-lived secrets):
+#   On npmjs.com, open the package settings → "Trusted Publisher" → GitHub Actions:
+#        Repository owner: DevinoSolutions
+#        Repository name:  n8n-nodes-shorty
+#        Workflow name:    publish.yml   (matched exactly; renaming breaks publishing)
+#        Environment:      (leave blank)
+#   With NPM_TOKEN unset, npm uses GitHub's OIDC token instead.
+#
+# Both paths publish with --provenance. Provenance is signed by GitHub's OIDC
+# infrastructure regardless of how npm authentication is handled, and n8n's
+# Creator Portal requires it for verified community nodes.
+#
+# ─── TAG CONVENTION ────────────────────────────────────────────────────────────
+#
+# This workflow triggers on tags matching "*.*.*" (e.g. 0.2.0).
+# If you prefer tags with a "v" prefix (e.g. v0.2.0), change the filter to:
+#   tags: ['v*.*.*']
+#
+# ─── RELEASE PROCESS ───────────────────────────────────────────────────────────
+#
+# Run the following command locally to start an interactive release:
+#
+#   npm run release
+#
+# This will lint, build, prompt for a version bump, update the changelog,
+# commit, tag, and push — which triggers this workflow to publish to npm.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      # Matches 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
+      # See "TAG CONVENTION" above if you prefer tags with a "v" prefix.
+      - '*.*.*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Required to mint an OIDC token for npm provenance attestation.
+      id-token: write
+      # Scoped down from the default (write) for least-privilege publishing.
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: 'npm ci'
+
+      - name: Release
+        # Publishes to npm with a provenance attestation (requires id-token: write above).
+        # Lint and build run automatically as part of the release process.
+        #
+        # Option A (OIDC): leave NPM_TOKEN unset — the token step is skipped and
+        #   npm uses the OIDC exchange instead.
+        # Option B (token): set NPM_TOKEN in repo secrets — it is written to
+        #   .npmrc here before publishing.
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npm run release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
