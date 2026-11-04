@@ -2,6 +2,7 @@ import { NodeOperationError, type IDataObject, type IExecuteFunctions } from 'n8
 import type { CursorPage } from './listSearch';
 import { createIdempotencyKey, sendWithOneRetry, type StartPosition } from './shared/idempotency';
 import {
+	articleUrl,
 	getJob,
 	isFinished,
 	jobOutputId,
@@ -9,6 +10,7 @@ import {
 	jobWaitSettings,
 	readSummary,
 	readTranscription,
+	toSummary,
 	toTranscription,
 	translationInFlight,
 	waitForJob,
@@ -175,6 +177,41 @@ export function buildSummaryBody(this: IExecuteFunctions, itemIndex: number): ID
 }
 
 /**
+ * The summary Shorty answered `already_complete` with. Shorty keeps one summary per source,
+ * language and source type for all accounts, but `GET /v1/articles/{id}` reads only the caller's
+ * own: a source another account summarized first answers 404. That is not a missing summary, so
+ * the item stops with the reason and the summary's public page instead of a bare "not found".
+ */
+async function readExistingSummary(
+	this: IExecuteFunctions,
+	articleId: string,
+	itemIndex: number,
+): Promise<IDataObject> {
+	const response = await shortyRequest.call(this, {
+		method: 'GET',
+		path: `/v1/articles/${encodeURIComponent(articleId)}`,
+	});
+	if (response.statusCode === 404) {
+		throw new NodeOperationError(
+			this.getNode(),
+			'Shorty already has a summary of this source, but this API key cannot read it',
+			{
+				itemIndex,
+				description: `Shorty keeps one summary per source and language, and this one was made by another Shorty account. Open it at ${articleUrl(articleId)}, or summarize the source in another language. Summary ID: ${articleId}.`,
+			},
+		);
+	}
+	if (response.statusCode >= 400) {
+		throwApiError.call(this, response, 'Shorty did not return the summary:', itemIndex);
+	}
+	return {
+		status: 'already_complete',
+		finished: true,
+		...toSummary(response.body as IDataObject, null),
+	};
+}
+
+/**
  * POST /v1/summaries. A 200 means this exact source was already summarized in this language:
  * the summary is read back at once. A 202 starts a job; with Wait for Completion the node polls
  * it and returns the finished summary.
@@ -190,8 +227,7 @@ const summarize: Handler = async function (itemIndex) {
 		'Shorty did not start the summary:',
 	);
 	if (started.statusCode === 200 && started.body.status === 'already_complete') {
-		const summary = await readSummary.call(this, String(started.body.article_id), null, itemIndex);
-		return { status: 'already_complete', finished: true, ...summary };
+		return await readExistingSummary.call(this, String(started.body.article_id), itemIndex);
 	}
 
 	const jobId = typeof started.body.job_id === 'string' ? started.body.job_id : null;

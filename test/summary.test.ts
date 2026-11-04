@@ -120,6 +120,33 @@ describe('Summary > Summarize', () => {
 		assert.strictEqual(item.json.article_url, `${API}/articles/art_1`);
 	});
 
+	it('explains an already-complete summary made by another account, which the key cannot read', async () => {
+		// Shorty caches one summary per source for all accounts but reads back only the caller's
+		// own; seen live on PROD 2026-11-04 with https://example.com.
+		const http = new MockHttp([
+			{ statusCode: 200, body: { status: 'already_complete', article_id: 'art_other' } },
+			{
+				statusCode: 404,
+				body: { code: 'resource_not_found', detail: 'No article with that id.' },
+			},
+		]);
+		const error = await rejection(run([summarizeParams()], http));
+		assert.match(
+			error.message,
+			/already has a summary of this source, but this API key cannot read it/,
+		);
+		assert.match(String(error.description), /another Shorty account/);
+		assert.match(String(error.description), /https:\/\/aishorty\.com\/articles\/art_other/);
+		assert.strictEqual(http.calls.length, 2);
+
+		const kept = new MockHttp([
+			{ statusCode: 200, body: { status: 'already_complete', article_id: 'art_other' } },
+			{ statusCode: 404, body: { code: 'resource_not_found' } },
+		]);
+		const [[item]] = await run([summarizeParams()], kept, { continueOnFail: true });
+		assert.match(String(item.json.error), /cannot read it/);
+	});
+
 	it('waits for the job, then returns the finished summary', async () => {
 		const http = new MockHttp([
 			ACCEPTED,
