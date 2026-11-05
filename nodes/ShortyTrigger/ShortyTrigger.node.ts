@@ -8,7 +8,12 @@ import {
 	type IWebhookFunctions,
 	type IWebhookResponseData,
 } from 'n8n-workflow';
-import { readSummary, readTranscription, toTranscription } from '../Shorty/shared/jobs';
+import {
+	readSummary,
+	readTranscription,
+	toTranscription,
+	transcriptionFailure,
+} from '../Shorty/shared/jobs';
 import { shortyRequest, throwApiError } from '../Shorty/shared/transport';
 import { readHeader, signatureMatches, timestampIsFresh } from './signature';
 
@@ -167,7 +172,7 @@ export class ShortyTrigger implements INodeType {
 						type: 'boolean',
 						default: true,
 						description:
-							'Whether to read the finished summary or transcription back from Shorty when a job succeeds, so the item carries the summary text or transcript. Each event then costs one API request.',
+							'Whether to read the finished summary or transcription back from Shorty when a job succeeds, so the item carries the summary text or transcript, and the reason a transcription failed when one fails. Each such event then costs one API request.',
 					},
 				],
 			},
@@ -372,13 +377,11 @@ export class ShortyTrigger implements INodeType {
 		const jobType = String(output.jobType ?? '');
 		const isSummary = jobType === 'YOUTUBE_SUMMARY' || jobType === 'CONTENT_SUMMARY';
 		const isTranscription = jobType === 'TRANSCRIPTION';
-		if (
-			options.includeResult === false ||
-			isTest ||
-			envelope.type !== 'job.succeeded' ||
-			!outputId ||
-			(!isSummary && !isTranscription)
-		) {
+		const readsResult = envelope.type === 'job.succeeded' && (isSummary || isTranscription);
+		// Shorty's job.failed carries no reason; a failed transcription records it on the
+		// transcription.
+		const readsReason = envelope.type === 'job.failed' && isTranscription && !job.error;
+		if (options.includeResult === false || isTest || !outputId || (!readsResult && !readsReason)) {
 			return { workflowData: [this.helpers.returnJsonArray([item])] };
 		}
 
@@ -389,6 +392,13 @@ export class ShortyTrigger implements INodeType {
 		// nothing. Read-back failures leave the result empty and never throw, because the answer is
 		// already sent.
 		this.getResponseObject().status(200).json({ received: true });
+		if (readsReason) {
+			item.error = await transcriptionFailure.call(this, outputId);
+			return {
+				noWebhookResponse: true,
+				workflowData: [this.helpers.returnJsonArray([item])],
+			};
+		}
 		try {
 			if (isSummary) {
 				item.summary = await readSummary.call(this, outputId, String(job.jobId ?? ''));

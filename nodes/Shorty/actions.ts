@@ -12,6 +12,7 @@ import {
 	readTranscription,
 	toSummary,
 	toTranscription,
+	transcriptionFailure,
 	translationInFlight,
 	waitForJob,
 	type Job,
@@ -141,10 +142,18 @@ function unfinished(job: Job): IDataObject {
 }
 
 /** A job that failed or was cancelled stops the item with Shorty's own reason. */
-function failJob(this: IExecuteFunctions, job: Job, what: string, itemIndex: number): never {
+function failJob(
+	this: IExecuteFunctions,
+	job: Job,
+	what: string,
+	itemIndex: number,
+	recorded: string | null = null,
+): never {
 	const state = jobState(job.status);
 	const reason =
-		state === 'cancelled' ? 'the job was cancelled' : (job.error ?? 'the job failed in Shorty');
+		state === 'cancelled'
+			? 'the job was cancelled'
+			: (job.error ?? recorded ?? 'the job failed in Shorty');
 	throw new NodeOperationError(this.getNode(), `Shorty could not finish the ${what}: ${reason}`, {
 		itemIndex,
 		description: `Job ID: ${job.jobId}.`,
@@ -343,7 +352,13 @@ const transcribe: Handler = async function (itemIndex) {
 	const deadline = Date.now() + timeout * 1000;
 	const { job, finished } = await waitForJob.call(this, jobId, timeout, itemIndex);
 	if (!finished) return unfinished(job);
-	if (jobState(job.status) !== 'success') failJob.call(this, job, 'transcription', itemIndex);
+	if (jobState(job.status) !== 'success') {
+		const recorded =
+			jobState(job.status) === 'error' && !job.error
+				? await transcriptionFailure.call(this, jobOutputId(job) ?? jobId)
+				: null;
+		failJob.call(this, job, 'transcription', itemIndex, recorded);
+	}
 	const transcription = await finishedTranscription.call(
 		this,
 		jobOutputId(job) ?? jobId,

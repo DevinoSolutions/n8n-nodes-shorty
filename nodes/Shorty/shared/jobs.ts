@@ -181,3 +181,20 @@ export async function readTranscription(
 		itemIndex,
 	);
 }
+
+/**
+ * Why a transcription failed. Shorty's job, and the `job.failed` webhook built from it, carries no
+ * reason; the transcription records it, for example that the host refused the download. Null when
+ * it records none or cannot be read, since the job's failure is reported either way.
+ */
+export async function transcriptionFailure(
+	this: ShortyContext,
+	transcriptionId: string,
+): Promise<string | null> {
+	try {
+		const { error } = await readTranscription.call(this, transcriptionId);
+		return typeof error === 'string' && error.trim() !== '' ? error : null;
+	} catch {
+		return null;
+	}
+}

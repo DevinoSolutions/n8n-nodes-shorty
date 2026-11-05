@@ -29,6 +29,9 @@ async function run(params: IDataObject[], http: MockHttp, continueOnFail = false
 	return await node.execute.call(executeContext(params, http, { continueOnFail }));
 }
 
+const DOWNLOAD_FAILED =
+	'Failed to download the audio file from storage. Please check the file URL and try again.';
+
 const ACCEPTED: MockResponse = {
 	statusCode: 202,
 	body: { job_id: 'tr_1', status: 'queued', tracking_url: '/v1/jobs/tr_1' },
@@ -122,6 +125,33 @@ describe('Transcription > Transcribe', () => {
 		]);
 		const error = await rejection(run([transcribeParams({ waitForCompletion: true })], http));
 		assert.match(error.message, /could not finish the transcription: the job was cancelled/);
+	});
+
+	it('stops a failed transcription with the reason the transcription recorded', async () => {
+		// Shorty's job carries no reason; seen live on PROD 2026-11-04 with a host that refused
+		// Shorty's download.
+		const http = new MockHttp([
+			ACCEPTED,
+			{ statusCode: 200, body: transcriptionJob({ status: 'error' }) },
+			{ statusCode: 200, body: sampleTranscription({ status: 'ERROR', error: DOWNLOAD_FAILED }) },
+		]);
+		const error = await rejection(run([transcribeParams({ waitForCompletion: true })], http));
+		assert.strictEqual(http.calls[2].url, `${API}/v1/transcriptions/tr_1`);
+		assert.strictEqual(
+			error.message,
+			`Shorty could not finish the transcription: ${DOWNLOAD_FAILED}`,
+		);
+		assert.strictEqual(String(error.description), 'Job ID: tr_1.');
+	});
+
+	it('still stops a failed transcription when its reason cannot be read', async () => {
+		const http = new MockHttp([
+			ACCEPTED,
+			{ statusCode: 200, body: transcriptionJob({ status: 'error' }) },
+			{ statusCode: 500, body: { code: 'internal_error' } },
+		]);
+		const error = await rejection(run([transcribeParams({ waitForCompletion: true })], http));
+		assert.match(error.message, /could not finish the transcription: the job failed in Shorty/);
 	});
 });
 

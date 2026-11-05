@@ -67,6 +67,12 @@ const FAILED_JOB = {
 	error: 'Transcription failed: unreadable audio',
 	output: {},
 };
+/** What Shorty actually sends for a failed transcription: the job, with no reason in it. */
+const FAILED_TRANSCRIPTION_JOB = {
+	jobId: 'tr_2',
+	status: 'error',
+	output: { jobType: 'TRANSCRIPTION', title: 'Episode 2', outputId: 'tr_2' },
+};
 
 async function receive(options: {
 	body: string;
@@ -291,6 +297,38 @@ describe('Shorty Trigger > deliveries', () => {
 			job: FAILED_JOB,
 		});
 		assert.deepEqual(staticData.deliveryIds, ['whevt_1']);
+	});
+
+	it('fills in the reason a transcription failed, which the job.failed event does not carry', async () => {
+		const body = envelope('job.failed', FAILED_TRANSCRIPTION_JOB);
+		const http = new MockHttp([
+			{
+				statusCode: 200,
+				body: sampleTranscription({ id: 'tr_2', status: 'ERROR', error: 'Download refused' }),
+			},
+		]);
+		const { result, recorder } = await receive({ body, headers: signedHeaders(body), http });
+		assert.strictEqual(recorder.statusCode, 200);
+		assert.strictEqual(result.noWebhookResponse, true);
+		assert.strictEqual(http.calls[0].url, `${API}/v1/transcriptions/tr_2`);
+		const [[item]] = result.workflowData ?? [];
+		assert.strictEqual(item.json.error, 'Download refused');
+		assert.strictEqual(item.json.job_type, 'TRANSCRIPTION');
+		assert.strictEqual(item.json.transcription, undefined);
+	});
+
+	it('leaves the failure reason empty with Include Result off, or when it cannot be read', async () => {
+		const body = envelope('job.failed', FAILED_TRANSCRIPTION_JOB);
+		const off = await receive({ body, headers: signedHeaders(body), includeResult: false });
+		assert.strictEqual(off.http.calls.length, 0);
+		assert.strictEqual(off.result.workflowData?.[0][0].json.error, null);
+
+		const unreadable = await receive({
+			body,
+			headers: signedHeaders(body, SECRET, 'whevt_2'),
+			http: new MockHttp([{ statusCode: 404, body: { code: 'resource_not_found' } }]),
+		});
+		assert.strictEqual(unreadable.result.workflowData?.[0][0].json.error, null);
 	});
 
 	it('reads the finished summary back after answering Shorty first', async () => {

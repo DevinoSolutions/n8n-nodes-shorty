@@ -89,7 +89,7 @@ The scopes each part of the package needs, for a custom key:
 ### Waiting, timeouts and failures
 
 - A job that does not finish within **Timeout** is returned as it stands, with `finished: false`, its `job_id` and `tracking_url`. It keeps running in Shorty; read it later with **Job > Get**.
-- A job that fails or is cancelled stops the item with Shorty's own reason and the job ID. With **Continue On Fail** the item carries the error instead.
+- A job that fails or is cancelled stops the item with Shorty's own reason and the job ID. For a transcription that is the reason Shorty recorded, such as a host that refused to let Shorty download the file (Shorty cannot fetch every link: some hosts block automated downloads). With **Continue On Fail** the item carries the error instead.
 
 ### Starting a job once
 
@@ -117,8 +117,8 @@ Every Summarize and Transcribe carries an `Idempotency-Key` header, and Shorty a
 - **Replays are refused.** Shorty signs each attempt, retries included, with the time of that attempt, so the node also answers `401` to a delivery whose signed timestamp is more than 5 minutes from the n8n server's clock. Keep that clock synchronised (NTP).
 - **Each event starts the workflow once.** Shorty retries a delivery until it gets a `2xx` (9 attempts over about 45 hours), with the same `webhook-id`. The node remembers the last 200 delivery IDs and answers a repeat with `200` without starting the workflow.
 - **Where the secret lives.** Shorty returns the signing secret once, when the endpoint is created. The node keeps it, with the endpoint ID and the recent delivery IDs, in the workflow's static data, which n8n stores with the workflow in its database, as it does for its own trigger nodes. **Listen for test event** registers a separate endpoint for the test URL, with its own secret that n8n holds only for the test session.
-- **Each item** has `event`, `event_id` (the delivery's `webhook-id`, stable across Shorty's retries), `occurred_at`, `test`, `job_id`, `status`, `job_type` (`YOUTUBE_SUMMARY`, `CONTENT_SUMMARY`, `TRANSCRIPTION`, ...), `title`, `output_id`, `error`, and the raw `job` (the same shape as **Job > Get**).
-- **Include Result** (on by default) reads the finished summary (`summary`, the same shape as **Summary > Get**) or transcription (`transcription`) back from Shorty for a succeeded job. The node answers Shorty's request before that read, so the read never delays the answer. If the read fails, the item is still emitted with the result set to `null`. Turn it off to save that API request.
+- **Each item** has `event`, `event_id` (the delivery's `webhook-id`, stable across Shorty's retries), `occurred_at`, `test`, `job_id`, `status`, `job_type` (`YOUTUBE_SUMMARY`, `CONTENT_SUMMARY`, `TRANSCRIPTION`, ...), `title`, `output_id`, `error`, and the raw `job` (the same shape as **Job > Get**). Shorty's event carries no failure reason, so `error` is filled in only for a failed transcription, with Include Result on.
+- **Include Result** (on by default) reads the finished summary (`summary`, the same shape as **Summary > Get**) or transcription (`transcription`) back from Shorty for a succeeded job, and the reason a transcription failed (`error`) for a failed one. The node answers Shorty's request before that read, so the read never delays the answer. If the read fails, the item is still emitted with the result (or `error`) set to `null`. Turn it off to save that API request.
 - A **Send test event** from Shorty's **Settings > Webhooks** is passed through with `test: true` and no result.
 - On activation the node replaces an endpoint it registered earlier if its URL (n8n's base URL changed), its events or its state (unverified, or disabled by Shorty after 20 failed deliveries) no longer match, deleting the old one in Shorty first.
 
@@ -130,7 +130,7 @@ A transcription started over the API finishes only while something reads it (see
 
 **Transcribe podcast episodes.** Start with an **RSS Feed Trigger** on the podcast feed, then **Transcription > Transcribe** with **Media URL** `{{ $json.enclosure.url }}` and **Timeout** raised to fit the episode length. Store `{{ $json.transcript_text }}` in a database or a doc.
 
-**React to finished jobs.** Start with **Shorty Trigger** on **Job Succeeded** to post every new summary to a channel, or on **Job Failed** to alert you with `{{ $json.error }}`.
+**React to finished jobs.** Start with **Shorty Trigger** on **Job Succeeded** to post every new summary to a channel, or on **Job Failed** to alert you with the job's `{{ $json.title }}` (the link it was given) and, for a transcription, the reason in `{{ $json.error }}`.
 
 ## Use as an AI Agent tool
 
