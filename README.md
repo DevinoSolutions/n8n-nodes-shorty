@@ -72,7 +72,7 @@ The scopes each part of the package needs, for a custom key:
 | Get | Retrieve one transcription with its text and `transcript_text`. | `GET /v1/transcriptions/{id}` |
 | Get Many | List your transcriptions, newest first, with Return All or a limit. | `GET /v1/transcriptions` |
 
-**Keep Wait for Completion on for transcriptions.** Shorty moves a transcription started over the API forward each time it is read (`GET /v1/jobs/{id}` or `GET /v1/transcriptions`); there is no browser session doing it. Started with Wait for Completion off and never read again, it does not finish, and after about 30 minutes Shorty marks it failed. If you turn it off, read the job with **Job > Get** (Wait for Completion on) later in the workflow.
+**Wait for Completion is optional for transcriptions.** Shorty follows a transcription on its own and ends it within about a minute of the job finishing, whether or not anything reads it. Started with Wait for Completion off, pick up the result with **Shorty Trigger** or with **Job > Get** later in the workflow.
 
 ### Job
 
@@ -122,7 +122,7 @@ Every Summarize and Transcribe carries an `Idempotency-Key` header, and Shorty a
 - A **Send test event** from Shorty's **Settings > Webhooks** is passed through with `test: true` and no result.
 - On activation the node replaces an endpoint it registered earlier if its URL (n8n's base URL changed), its events or its state (unverified, or disabled by Shorty after 20 failed deliveries) no longer match, deleting the old one in Shorty first.
 
-A transcription started over the API finishes only while something reads it (see [Transcription](#transcription)), so its **Job Succeeded** event arrives when the workflow that started it waits for it or polls it.
+**A success can follow a failure.** A job sends each event at most once, so it usually sends one. If Shorty stops waiting on a job and marks it failed, then finds out it finished after all, you get **Job Failed** first and **Job Succeeded** after it, with the same `job_id`. A workflow that acts on failures (an alert, a retry) should let a later **Job Succeeded** for that `job_id` replace what it did.
 
 ## Usage examples
 
