@@ -1,0 +1,38 @@
+{
+	"id": "shortySmoke1",
+	"name": "Shorty node smoke (read-only)",
+	"active": false,
+	"settings": { "executionOrder": "v1" },
+	"nodes": [
+		{
+			"id": "0b1d7c2e-1a4f-4f3e-9f0a-000000000001",
+			"name": "Start",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [0, 0],
+			"parameters": {}
+		},
+		{
+			"id": "0b1d7c2e-1a4f-4f3e-9f0a-000000000002",
+			"name": "Usage",
+			"type": "n8n-nodes-shorty.shorty",
+			"typeVersion": 1,
+			"position": [220, 0],
+			"parameters": { "resource": "account", "operation": "getUsage" },
+			"credentials": { "shortyApi": { "id": "shortySmokeCred", "name": "Shorty smoke" } }
+		},
+		{
+			"id": "0b1d7c2e-1a4f-4f3e-9f0a-000000000003",
+			"name": "Summaries",
+			"type": "n8n-nodes-shorty.shorty",
+			"typeVersion": 1,
+			"position": [440, 0],
+			"parameters": { "resource": "summary", "operation": "getAll", "returnAll": false, "limit": 2 },
+			"credentials": { "shortyApi": { "id": "shortySmokeCred", "name": "Shorty smoke" } }
+		}
+	],
+	"connections": {
+		"Start": { "main": [[{ "node": "Usage", "type": "main", "index": 0 }]] },
+		"Usage": { "main": [[{ "node": "Summaries", "type": "main", "index": 0 }]] }
+	}
+}
