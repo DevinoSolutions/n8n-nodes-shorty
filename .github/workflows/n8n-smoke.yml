@@ -1,0 +1,71 @@
+name: n8n smoke
+
+# Installs the packed node into a real n8n, the way a community install does, and runs a
+# read-only workflow (Account > Get Usage, Summary > Get Many) against Shorty prod.
+# Manual only: it calls prod with SHORTY_SMOKE_API_KEY and uses no quota.
+on:
+  workflow_dispatch:
+    inputs:
+      n8n_image:
+        description: n8n image to test against
+        default: n8nio/n8n:latest
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMG: ${{ inputs.n8n_image }}
+      # Encrypts the throwaway credential in a volume that is gone when the job ends.
+      N8N_ENCRYPTION_KEY: n8n-smoke-throwaway-volume-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Build and pack
+        run: |
+          npm ci
+          npm run build
+          npm pack
+          ls -l n8n-nodes-shorty-*.tgz
+
+      - name: Install the package into n8n's community nodes folder
+        run: |
+          docker volume create n8n-home
+          docker run --rm --user root -v n8n-home:/home/node/.n8n -v "$PWD":/pkg --entrypoint sh "$IMG" -c '
+            set -e
+            mkdir -p /home/node/.n8n/nodes && cd /home/node/.n8n/nodes
+            [ -f package.json ] || npm init -y >/dev/null
+            npm install --omit=dev --no-audit --no-fund /pkg/n8n-nodes-shorty-*.tgz
+            chown -R node:node /home/node/.n8n
+            ls node_modules | grep n8n-nodes-shorty'
+          docker run --rm "$IMG" --version
+
+      - name: Import the credential and the workflow
+        env:
+          SHORTY_API_KEY: ${{ secrets.SHORTY_SMOKE_API_KEY }}
+        run: |
+          test -n "$SHORTY_API_KEY" || { echo "SHORTY_SMOKE_API_KEY is not set"; exit 1; }
+          umask 077
+          jq -n --arg k "$SHORTY_API_KEY" '[{id:"shortySmokeCred",name:"Shorty smoke",type:"shortyApi",data:{apiKey:$k}}]' > cred.json
+          docker run --rm -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n -v "$PWD":/w "$IMG" import:credentials --input=/w/cred.json
+          rm -f cred.json
+          docker run --rm -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n -v "$PWD":/w "$IMG" import:workflow --input=/w/test/n8n-smoke/workflow.json
+
+      - name: Run the workflow in n8n
+        run: |
+          set +e
+          docker run --rm -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n "$IMG" execute --id=shortySmoke1 > out.txt 2> err.txt
+          rc=$?
+          set -e
+          echo "n8n execute exit code: $rc"
+          grep -v -i -E 'bearer|apikey|authorization' err.txt | tail -n 40 || true
+          node test/n8n-smoke/check.mjs out.txt
+          test "$rc" = 0
