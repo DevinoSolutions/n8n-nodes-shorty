@@ -53,10 +53,8 @@ jobs:
           SHORTY_API_KEY: ${{ secrets.SHORTY_SMOKE_API_KEY }}
         run: |
           test -n "$SHORTY_API_KEY" || { echo "SHORTY_SMOKE_API_KEY is not set"; exit 1; }
-          umask 077
-          jq -n --arg k "$SHORTY_API_KEY" '[{id:"shortySmokeCred",name:"Shorty smoke",type:"shortyApi",data:{apiKey:$k}}]' > cred.json
-          docker run --rm -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n -v "$PWD":/w "$IMG" import:credentials --input=/w/cred.json
-          rm -f cred.json
+          # The credential goes in through stdin, so it never lands on the runner's disk.
+          jq -n --arg k "$SHORTY_API_KEY" '[{id:"shortySmokeCred",name:"Shorty smoke",type:"shortyApi",data:{apiKey:$k}}]'             | docker run --rm -i -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n --entrypoint sh "$IMG" -c               'umask 077 && cat > /tmp/cred.json && n8n import:credentials --input=/tmp/cred.json; rc=$?; rm -f /tmp/cred.json; exit $rc'
           docker run --rm -e N8N_ENCRYPTION_KEY -v n8n-home:/home/node/.n8n -v "$PWD":/w "$IMG" import:workflow --input=/w/test/n8n-smoke/workflow.json
 
       - name: Run the workflow in n8n
