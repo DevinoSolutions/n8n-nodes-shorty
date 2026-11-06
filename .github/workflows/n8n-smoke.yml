@@ -43,7 +43,7 @@ jobs:
             set -e
             mkdir -p /home/node/.n8n/nodes && cd /home/node/.n8n/nodes
             [ -f package.json ] || npm init -y >/dev/null
-            npm install --omit=dev --no-audit --no-fund /pkg/n8n-nodes-shorty-*.tgz
+            npm install --omit=dev --omit=peer --ignore-scripts --no-audit --no-fund /pkg/n8n-nodes-shorty-*.tgz
             chown -R node:node /home/node/.n8n
             ls node_modules | grep n8n-nodes-shorty'
           docker run --rm "$IMG" --version
