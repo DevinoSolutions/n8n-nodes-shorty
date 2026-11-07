@@ -67,6 +67,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     permissions:
       # Required to mint an OIDC token for npm provenance attestation.
