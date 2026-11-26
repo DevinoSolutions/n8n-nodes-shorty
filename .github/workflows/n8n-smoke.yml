@@ -15,7 +15,8 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    # Manual dispatch only (trusted), so it runs on the org's self-hosted runners.
+    runs-on: ubuntu-devino
     timeout-minutes: 20
     env:
       IMG: ${{ inputs.n8n_image }}

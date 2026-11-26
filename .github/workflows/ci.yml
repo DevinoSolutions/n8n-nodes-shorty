@@ -13,7 +13,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # The org's self-hosted runners (no Actions minutes; hosted minutes ran out
+    # 2026-11-26). Fork and Dependabot pull requests stay on a GitHub-hosted runner,
+    # so untrusted code never runs on ours.
+    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && 'ubuntu-devino' || 'ubuntu-24.04' }}
     timeout-minutes: 60
 
     steps:

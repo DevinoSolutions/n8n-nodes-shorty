@@ -66,6 +66,8 @@ on:
 jobs:
   publish:
     name: Publish to npm
+    # Stays GitHub-hosted on purpose: npm provenance (`n8n-node release`) is only
+    # generated on GitHub-hosted runners. Tag pushes wait for hosted minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
